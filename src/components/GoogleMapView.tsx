@@ -51,6 +51,20 @@ export default function GoogleMapView({
           streetViewControl: false,
           mapTypeControl: false,
           fullscreenControl: false,
+          // Hide Google's own base-map business/transit labels so ONLY our
+          // (radius-filtered) markers show — avoids "results far outside range".
+          styles: [
+            {
+              featureType: "poi",
+              elementType: "labels",
+              stylers: [{ visibility: "off" }],
+            },
+            {
+              featureType: "transit",
+              elementType: "labels",
+              stylers: [{ visibility: "off" }],
+            },
+          ],
         }}
       >
         <MarkerF position={{ lat: coords.lat, lng: coords.lon }} title="你在这" />
