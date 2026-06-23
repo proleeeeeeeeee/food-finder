@@ -6,6 +6,23 @@ import { fetchGooglePlaces } from "@/lib/places";
 // (normally ~2-3s). Keeps serverless hosts from killing a slow request early.
 export const maxDuration = 20;
 
+// ---- in-memory response cache ----
+// Cuts repeat Google/Overpass calls: the same area (rounded to ~110m) + radius
+// within the TTL is served from memory instead of hitting the upstreams again.
+// Module-scoped, so it survives across requests on a WARM serverless instance
+// (lost on cold start, not shared across instances — for persistent/shared
+// caching, upgrade to Vercel KV / Upstash Redis later). Cached distances are
+// relative to the first requester's point in the cell (≤~110m off for others;
+// exact for the same user re-searching the same spot).
+type CacheEntry = { restaurants: Restaurant[]; source: string; expires: number };
+const CACHE = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour — POIs change slowly
+const CACHE_MAX = 300;
+
+function cacheKey(lat: number, lon: number, radius: number) {
+  return `${lat.toFixed(3)},${lon.toFixed(3)},${radius}`;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const lat = Number(searchParams.get("lat"));
@@ -20,6 +37,17 @@ export async function GET(request: Request) {
     Math.max(Number.isFinite(rawRadius) ? rawRadius : 1500, 200),
     5000,
   );
+
+  // Cache hit → skip all upstream calls.
+  const ck = cacheKey(lat, lon, radius);
+  const hit = CACHE.get(ck);
+  if (hit && hit.expires > Date.now()) {
+    return Response.json({
+      restaurants: hit.restaurants,
+      source: hit.source,
+      cached: true,
+    });
+  }
 
   // Hybrid: fetch Google (when a key is set) AND OSM in parallel, then merge +
   // dedupe. Google contributes its (≤20) high-quality/mall results; OSM adds
@@ -56,7 +84,14 @@ export async function GET(request: Request) {
       ? "google+osm"
       : "google"
     : "osm";
-  return Response.json({ restaurants, source });
+
+  CACHE.set(ck, { restaurants, source, expires: Date.now() + CACHE_TTL_MS });
+  if (CACHE.size > CACHE_MAX) {
+    const oldest = CACHE.keys().next().value;
+    if (oldest !== undefined) CACHE.delete(oldest);
+  }
+
+  return Response.json({ restaurants, source, cached: false });
 }
 
 // Combine both sources, dropping duplicate names (Google wins — better data),
