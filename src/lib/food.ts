@@ -139,6 +139,56 @@ export function matchesFlavor(r: Restaurant, key: string): boolean {
   return false;
 }
 
+// Cuisine multi-select (uses the cuisine data already in the API response).
+export const CUISINES = [
+  { key: "chinese", label: "中餐", match: ["chinese", "cantonese", "sichuan", "dim_sum", "noodle", "hotpot"] },
+  { key: "malaysian", label: "马来/本地", match: ["malaysian", "mamak", "nasi", "local", "asian", "indonesian"] },
+  { key: "japanese", label: "日料", match: ["japanese", "sushi", "ramen"] },
+  { key: "korean", label: "韩餐", match: ["korean"] },
+  { key: "western", label: "西餐", match: ["western", "american", "italian", "pizza", "steak", "french", "burger"] },
+  { key: "indian", label: "印度", match: ["indian", "curry"] },
+  { key: "thai", label: "泰餐", match: ["thai"] },
+  { key: "drink", label: "咖啡/饮品", match: ["coffee", "cafe", "tea", "bubble_tea", "juice"] },
+  { key: "dessert", label: "甜品", match: ["dessert", "cake", "bakery", "ice_cream"] },
+] as const;
+
+export function matchesCuisine(r: Restaurant, keys: string[]): boolean {
+  if (keys.length === 0) return true;
+  const c = (r.cuisine ?? "").toLowerCase();
+  return keys.some((key) => {
+    const cu = CUISINES.find((x) => x.key === key);
+    return cu ? cu.match.some((m) => c.includes(m)) : false;
+  });
+}
+
+// Price tiers — a crude FREE estimate from venue type + cuisine (no data source
+// has real RM prices). The UI labels it "估算".
+export const PRICE_TIERS = [
+  { key: "cheap", label: "💵 RM20 以下", tier: 1 },
+  { key: "mid", label: "💸 RM20–40", tier: 2 },
+] as const;
+
+const CHEAP_CUISINE = [
+  "malaysian", "mamak", "indian", "chinese", "noodle", "fried", "burger",
+  "chicken", "sandwich", "local", "asian", "kopitiam", "nasi", "mee", "roti",
+  "hawker", "fried_chicken", "breakfast", "coffee", "tea", "juice", "ice_cream",
+  "curry", "indonesian",
+];
+const PRICEY_CUISINE = [
+  "japanese", "korean", "sushi", "ramen", "italian", "pizza", "western",
+  "american", "steak", "seafood", "french", "cantonese", "dim_sum", "barbecue",
+  "bbq", "grill", "kebab", "mexican", "buffet", "german",
+];
+
+export function estPriceTier(r: Restaurant): 1 | 2 {
+  const c = (r.cuisine ?? "").toLowerCase();
+  if (r.kind === "fast_food") return 1;
+  if (CHEAP_CUISINE.some((k) => c.includes(k))) return 1;
+  if (PRICEY_CUISINE.some((k) => c.includes(k))) return 2;
+  if (r.kind === "cafe") return 1; // drinks/snacks lean cheap
+  return 2; // plain sit-down restaurant default
+}
+
 export function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {

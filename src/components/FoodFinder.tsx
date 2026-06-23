@@ -4,20 +4,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Restaurant } from "@/lib/overpass";
 import {
+  CUISINES,
   FLAVORS,
   KINDS,
+  PRICE_TIERS,
+  estPriceTier,
+  matchesCuisine,
   matchesFlavor,
   prettyCuisine,
   prettyDistance,
   sampleN,
 } from "@/lib/food";
 import { openNow, type OpenState } from "@/lib/openNow";
+import SwipeDeck from "@/components/SwipeDeck";
 
 // 3D hero scene — client-only (WebGL), never server-rendered.
 const Scene3D = dynamic(() => import("@/components/Scene3D"), { ssr: false });
 
 type HistoryItem = { name: string; at: number };
-type Mode = "spin" | "versus";
+type Mode = "spin" | "versus" | "swipe";
 type Status = "idle" | "locating" | "searching" | "ready" | "error";
 
 const FETCH_RADIUS = 3000; // pull everything once, then filter by the slider client-side
@@ -62,6 +67,8 @@ export default function FoodFinder() {
     "cafe",
   ]);
   const [flavor, setFlavor] = useState<string | null>(null);
+  const [cuisineSel, setCuisineSel] = useState<string[]>([]);
+  const [priceTier, setPriceTier] = useState<number | null>(null);
   const [openOnly, setOpenOnly] = useState(false);
 
   // shared result
@@ -81,6 +88,10 @@ export default function FoodFinder() {
   const [vsTotal, setVsTotal] = useState(0);
   const [vsDone, setVsDone] = useState(0);
 
+  // swipe mode
+  const [swipeCards, setSwipeCards] = useState<Restaurant[]>([]);
+  const [swipeRound, setSwipeRound] = useState(0);
+
   // geolocation handles (for cleanup)
   const geoWatch = useRef<number | null>(null);
   const geoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,8 +107,11 @@ export default function FoodFinder() {
       list = list.filter((r) => kinds.includes(r.kind));
     if (openOnly) list = list.filter((r) => openNow(r.openingHours) === "open");
     if (flavor) list = list.filter((r) => matchesFlavor(r, flavor));
+    if (cuisineSel.length)
+      list = list.filter((r) => matchesCuisine(r, cuisineSel));
+    if (priceTier) list = list.filter((r) => estPriceTier(r) === priceTier);
     return list;
-  }, [withinRange, kinds, openOnly, flavor]);
+  }, [withinRange, kinds, openOnly, flavor, cuisineSel, priceTier]);
 
   // ---- persistence + cleanup ----
   useEffect(() => {
@@ -245,6 +259,18 @@ export default function FoodFinder() {
           : prev
         : [...prev, v],
     );
+  }
+
+  function toggleCuisine(k: string) {
+    setCuisineSel((prev) =>
+      prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k],
+    );
+  }
+
+  function startSwipe() {
+    setWinner(null);
+    setSwipeCards(sampleN(pool, 24));
+    setSwipeRound((n) => n + 1);
   }
 
   // ---- spin (slot machine) ----
@@ -527,6 +553,40 @@ export default function FoodFinder() {
                 </div>
               </FilterGroup>
 
+              <FilterGroup label="人均（估算）">
+                <div className="flex flex-wrap gap-2">
+                  {PRICE_TIERS.map((p) => (
+                    <Chip
+                      key={p.key}
+                      on={priceTier === p.tier}
+                      onClick={() =>
+                        setPriceTier(priceTier === p.tier ? null : p.tier)
+                      }
+                    >
+                      {p.label}
+                    </Chip>
+                  ))}
+                </div>
+              </FilterGroup>
+
+              <FilterGroup label="菜系">
+                <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                  {CUISINES.map((cu) => (
+                    <button
+                      key={cu.key}
+                      onClick={() => toggleCuisine(cu.key)}
+                      className={`shrink-0 rounded-full border-2 border-black px-3 py-1.5 text-sm font-black shadow-[2px_2px_0_0_#000] transition active:translate-x-[1px] active:translate-y-[1px] active:shadow-none ${
+                        cuisineSel.includes(cu.key)
+                          ? "bg-[#ff7eb3] text-white"
+                          : "bg-white text-black/45"
+                      }`}
+                    >
+                      {cu.label}
+                    </button>
+                  ))}
+                </div>
+              </FilterGroup>
+
               <label className="flex items-center gap-2 text-sm font-bold">
                 <input
                   type="checkbox"
@@ -555,11 +615,12 @@ export default function FoodFinder() {
             </section>
 
             {/* Mode switch */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {(
                 [
-                  ["spin", "🎰 随机转盘"],
-                  ["versus", "⚔️ 二选一"],
+                  ["spin", "🎰 转盘"],
+                  ["versus", "⚔️ PK"],
+                  ["swipe", "🃏 滑卡"],
                 ] as const
               ).map(([m, label]) => (
                 <button
@@ -568,6 +629,7 @@ export default function FoodFinder() {
                     if (mode !== m) {
                       setMode(m);
                       resetResults();
+                      if (m === "swipe") startSwipe();
                     }
                   }}
                   className={`rounded-full border-[3px] border-black py-2 text-sm font-black transition active:translate-x-[2px] active:translate-y-[2px] ${
@@ -663,6 +725,24 @@ export default function FoodFinder() {
               </section>
             )}
 
+            {/* Swipe mode */}
+            {mode === "swipe" && !winner && (
+              <section className="flex flex-col items-center">
+                {pool.length === 0 ? (
+                  <p className="text-sm font-bold text-black/50">
+                    调整筛选后再来滑 🃏
+                  </p>
+                ) : (
+                  <SwipeDeck
+                    key={swipeRound}
+                    cards={swipeCards}
+                    onDecide={recordWin}
+                    onReshuffle={startSwipe}
+                  />
+                )}
+              </section>
+            )}
+
             {/* Winner */}
             {winner && !spinning && (
               <section className="ff-bounce-in relative overflow-hidden rounded-3xl border-[3px] border-black bg-white shadow-[6px_6px_0_0_#000]">
@@ -712,7 +792,13 @@ export default function FoodFinder() {
                       </a>
                     </div>
                     <button
-                      onClick={() => (mode === "spin" ? spin() : startVersus())}
+                      onClick={() =>
+                        mode === "spin"
+                          ? spin()
+                          : mode === "versus"
+                            ? startVersus()
+                            : startSwipe()
+                      }
                       className="rounded-2xl border-[3px] border-black bg-white py-2.5 text-center text-sm font-black text-black shadow-[3px_3px_0_0_#000] transition active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
                     >
                       🔁 再来一次
