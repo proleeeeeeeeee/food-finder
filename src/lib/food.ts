@@ -216,3 +216,17 @@ export function shuffle<T>(arr: T[]): T[] {
 export function sampleN<T>(arr: T[], n: number): T[] {
   return shuffle(arr).slice(0, n);
 }
+
+// Google Maps deep-links. Directions to the place; or the place page (menu /
+// ratings / price / photos) — built from place_id so we don't pay for fields.
+export function mapsDirUrl(r: Restaurant): string {
+  if (r.placeId)
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(r.name)}&destination_place_id=${r.placeId}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lon}`;
+}
+
+export function mapsPlaceUrl(r: Restaurant): string {
+  if (r.placeId)
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.name)}&query_place_id=${r.placeId}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${r.name} ${r.lat},${r.lon}`)}`;
+}

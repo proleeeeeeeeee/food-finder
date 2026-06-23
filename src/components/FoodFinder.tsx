@@ -10,6 +10,8 @@ import {
   KINDS,
   PRICE_TIERS,
   estPriceTier,
+  mapsDirUrl,
+  mapsPlaceUrl,
   matchesCuisine,
   matchesDiet,
   matchesFlavor,
@@ -1048,20 +1050,6 @@ function VersusCard({
       </div>
     </button>
   );
-}
-
-function mapsDirUrl(r: Restaurant): string {
-  if (r.placeId)
-    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(r.name)}&destination_place_id=${r.placeId}`;
-  return `https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lon}`;
-}
-
-// Deep-link to the Google Maps place page (menu / ratings / price / photos) so
-// we don't have to pay for those fields via the API.
-function mapsPlaceUrl(r: Restaurant): string {
-  if (r.placeId)
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.name)}&query_place_id=${r.placeId}`;
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${r.name} ${r.lat},${r.lon}`)}`;
 }
 
 function OpenBadge({ state }: { state: OpenState }) {

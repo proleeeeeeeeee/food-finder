@@ -2,7 +2,13 @@
 
 import { useRef, useState } from "react";
 import type { Restaurant } from "@/lib/overpass";
-import { KINDS, prettyCuisine, prettyDistance } from "@/lib/food";
+import {
+  KINDS,
+  mapsDirUrl,
+  mapsPlaceUrl,
+  prettyCuisine,
+  prettyDistance,
+} from "@/lib/food";
 
 // Tinder-style deck: swipe right = 想吃 (like), left = 跳过. At the end, pick
 // randomly from the liked ones. Pure pointer events + transforms (no library).
@@ -138,6 +144,26 @@ export default function SwipeDeck({
           </div>
         )}
       </div>
+      {top && (
+        <div className="flex w-full max-w-xs gap-2">
+          <a
+            href={mapsDirUrl(top)}
+            target="_blank"
+            rel="noreferrer"
+            className="flex-1 rounded-xl border-[3px] border-black bg-[#3d7bff] py-2 text-center text-xs font-black text-white shadow-[2px_2px_0_0_#000] transition active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+          >
+            🧭 导航
+          </a>
+          <a
+            href={mapsPlaceUrl(top)}
+            target="_blank"
+            rel="noreferrer"
+            className="flex-1 rounded-xl border-[3px] border-black bg-[#ffc83d] py-2 text-center text-xs font-black text-black shadow-[2px_2px_0_0_#000] transition active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+          >
+            📋 菜单·评分
+          </a>
+        </div>
+      )}
       <div className="flex items-center gap-5">
         <button
           onClick={() => decide(false)}
