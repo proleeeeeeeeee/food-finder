@@ -22,8 +22,13 @@ import SwipeDeck from "@/components/SwipeDeck";
 
 // 3D hero scene — client-only (WebGL), never server-rendered.
 const Scene3D = dynamic(() => import("@/components/Scene3D"), { ssr: false });
-// Map view — client-only (Leaflet needs window).
+// Map view — client-only. Google Maps when a public key is configured, else the
+// free Leaflet/OSM map as fallback.
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
+const GoogleMapView = dynamic(() => import("@/components/GoogleMapView"), {
+  ssr: false,
+});
+const HAS_GMAPS = !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
 
 type HistoryItem = { name: string; at: number };
 type Mode = "spin" | "versus" | "swipe" | "map";
@@ -780,6 +785,12 @@ export default function FoodFinder() {
                   <p className="text-center text-sm font-bold text-black/50">
                     调整筛选后再看地图 🗺️
                   </p>
+                ) : HAS_GMAPS ? (
+                  <GoogleMapView
+                    coords={coords}
+                    restaurants={pool}
+                    onPick={recordWin}
+                  />
                 ) : (
                   <MapView
                     coords={coords}
