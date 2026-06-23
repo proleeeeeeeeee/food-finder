@@ -161,6 +161,21 @@ export function matchesCuisine(r: Restaurant, keys: string[]): boolean {
   });
 }
 
+// Dietary filter — uses OSM diet:* tags (sparse, OSM-only). All selected must hold.
+export const DIETS = [
+  { key: "halal", label: "🕌 清真" },
+  { key: "vegetarian", label: "🥦 素食" },
+] as const;
+
+export function matchesDiet(r: Restaurant, keys: string[]): boolean {
+  if (keys.length === 0) return true;
+  return keys.every((k) => {
+    if (k === "halal") return r.halal === true;
+    if (k === "vegetarian") return r.vegetarian === true;
+    return true;
+  });
+}
+
 // Price tiers — a crude FREE estimate from venue type + cuisine (no data source
 // has real RM prices). The UI labels it "估算".
 export const PRICE_TIERS = [

@@ -16,6 +16,9 @@ export type Restaurant = {
   // Google place id — lets the UI deep-link to the Maps place page (menu /
   // ratings / price / photos) without paying for those fields. OSM leaves unset.
   placeId?: string;
+  // Dietary flags from OSM diet:* tags (sparse; Google rows leave them unset).
+  halal?: boolean;
+  vegetarian?: boolean;
 };
 
 // Public Overpass mirrors, tried in order: de is primary, the rest are failover
@@ -186,6 +189,12 @@ function normalize(
       openingHours: tags.opening_hours,
       website: tags.website ?? tags["contact:website"],
       phone: tags.phone ?? tags["contact:phone"],
+      halal: tags["diet:halal"] === "yes" || tags["diet:halal"] === "only",
+      vegetarian:
+        tags["diet:vegetarian"] === "yes" ||
+        tags["diet:vegetarian"] === "only" ||
+        tags["diet:vegan"] === "yes" ||
+        tags["diet:vegan"] === "only",
       distance: haversine(lat, lon, elLat, elLon),
     });
   }

@@ -5,11 +5,13 @@ import dynamic from "next/dynamic";
 import type { Restaurant } from "@/lib/overpass";
 import {
   CUISINES,
+  DIETS,
   FLAVORS,
   KINDS,
   PRICE_TIERS,
   estPriceTier,
   matchesCuisine,
+  matchesDiet,
   matchesFlavor,
   prettyCuisine,
   prettyDistance,
@@ -20,9 +22,11 @@ import SwipeDeck from "@/components/SwipeDeck";
 
 // 3D hero scene — client-only (WebGL), never server-rendered.
 const Scene3D = dynamic(() => import("@/components/Scene3D"), { ssr: false });
+// Map view — client-only (Leaflet needs window).
+const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
 type HistoryItem = { name: string; at: number };
-type Mode = "spin" | "versus" | "swipe";
+type Mode = "spin" | "versus" | "swipe" | "map";
 type Status = "idle" | "locating" | "searching" | "ready" | "error";
 
 const FETCH_RADIUS = 3000; // pull everything once, then filter by the slider client-side
@@ -69,6 +73,7 @@ export default function FoodFinder() {
   const [flavor, setFlavor] = useState<string | null>(null);
   const [cuisineSel, setCuisineSel] = useState<string[]>([]);
   const [priceTier, setPriceTier] = useState<number | null>(null);
+  const [dietSel, setDietSel] = useState<string[]>([]);
   const [openOnly, setOpenOnly] = useState(false);
 
   // shared result
@@ -110,8 +115,9 @@ export default function FoodFinder() {
     if (cuisineSel.length)
       list = list.filter((r) => matchesCuisine(r, cuisineSel));
     if (priceTier) list = list.filter((r) => estPriceTier(r) === priceTier);
+    if (dietSel.length) list = list.filter((r) => matchesDiet(r, dietSel));
     return list;
-  }, [withinRange, kinds, openOnly, flavor, cuisineSel, priceTier]);
+  }, [withinRange, kinds, openOnly, flavor, cuisineSel, priceTier, dietSel]);
 
   // ---- persistence + cleanup ----
   useEffect(() => {
@@ -263,6 +269,12 @@ export default function FoodFinder() {
 
   function toggleCuisine(k: string) {
     setCuisineSel((prev) =>
+      prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k],
+    );
+  }
+
+  function toggleDiet(k: string) {
+    setDietSel((prev) =>
       prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k],
     );
   }
@@ -587,6 +599,23 @@ export default function FoodFinder() {
                 </div>
               </FilterGroup>
 
+              <FilterGroup label="饮食">
+                <div className="flex flex-wrap gap-2">
+                  {DIETS.map((d) => (
+                    <Chip
+                      key={d.key}
+                      on={dietSel.includes(d.key)}
+                      onClick={() => toggleDiet(d.key)}
+                    >
+                      {d.label}
+                    </Chip>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px] font-medium text-black/35">
+                  仅显示有标注的（数据可能不全）
+                </p>
+              </FilterGroup>
+
               <label className="flex items-center gap-2 text-sm font-bold">
                 <input
                   type="checkbox"
@@ -615,12 +644,13 @@ export default function FoodFinder() {
             </section>
 
             {/* Mode switch */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {(
                 [
                   ["spin", "🎰 转盘"],
                   ["versus", "⚔️ PK"],
                   ["swipe", "🃏 滑卡"],
+                  ["map", "🗺️ 地图"],
                 ] as const
               ).map(([m, label]) => (
                 <button
@@ -743,6 +773,23 @@ export default function FoodFinder() {
               </section>
             )}
 
+            {/* Map mode */}
+            {mode === "map" && coords && (
+              <section>
+                {pool.length === 0 ? (
+                  <p className="text-center text-sm font-bold text-black/50">
+                    调整筛选后再看地图 🗺️
+                  </p>
+                ) : (
+                  <MapView
+                    coords={coords}
+                    restaurants={pool}
+                    onPick={recordWin}
+                  />
+                )}
+              </section>
+            )}
+
             {/* Winner */}
             {winner && !spinning && (
               <section className="ff-bounce-in relative overflow-hidden rounded-3xl border-[3px] border-black bg-white shadow-[6px_6px_0_0_#000]">
@@ -792,13 +839,12 @@ export default function FoodFinder() {
                       </a>
                     </div>
                     <button
-                      onClick={() =>
-                        mode === "spin"
-                          ? spin()
-                          : mode === "versus"
-                            ? startVersus()
-                            : startSwipe()
-                      }
+                      onClick={() => {
+                        if (mode === "spin") spin();
+                        else if (mode === "versus") startVersus();
+                        else if (mode === "swipe") startSwipe();
+                        else setWinner(null);
+                      }}
                       className="rounded-2xl border-[3px] border-black bg-white py-2.5 text-center text-sm font-black text-black shadow-[3px_3px_0_0_#000] transition active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
                     >
                       🔁 再来一次
