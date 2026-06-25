@@ -82,11 +82,15 @@ export default function FoodFinder() {
   const [priceTier, setPriceTier] = useState<number | null>(null);
   const [dietSel, setDietSel] = useState<string[]>([]);
   const [openOnly, setOpenOnly] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [avoidRecent, setAvoidRecent] = useState(true);
 
   // shared result
   const [mode, setMode] = useState<Mode>("spin");
   const [winner, setWinner] = useState<Restaurant | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [favorites, setFavorites] = useState<Restaurant[]>([]);
+  const [blacklist, setBlacklist] = useState<string[]>([]);
 
   // spin mode
   const [spinning, setSpinning] = useState(false);
@@ -123,19 +127,47 @@ export default function FoodFinder() {
       list = list.filter((r) => matchesCuisine(r, cuisineSel));
     if (priceTier) list = list.filter((r) => estPriceTier(r) === priceTier);
     if (dietSel.length) list = list.filter((r) => matchesDiet(r, dietSel));
+    if (blacklist.length)
+      list = list.filter((r) => !blacklist.includes(r.name));
     return list;
-  }, [withinRange, kinds, openOnly, flavor, cuisineSel, priceTier, dietSel]);
+  }, [
+    withinRange,
+    kinds,
+    openOnly,
+    flavor,
+    cuisineSel,
+    priceTier,
+    dietSel,
+    blacklist,
+  ]);
+
+  // Random-pick pool — optionally drops the last few eaten so picks vary.
+  function freshPool(): Restaurant[] {
+    if (!avoidRecent) return pool;
+    const recent = new Set(history.slice(0, 5).map((h) => h.name));
+    const fresh = pool.filter((r) => !recent.has(r.name));
+    return fresh.length >= 2 ? fresh : pool;
+  }
 
   // ---- persistence + cleanup ----
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("ff-history");
-      // One-time hydration from localStorage after mount keeps SSR markup stable.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (raw) setHistory(JSON.parse(raw));
-    } catch {
-      // ignore corrupt storage
-    }
+    const load = (k: string) => {
+      try {
+        const raw = localStorage.getItem(k);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    };
+    const h = load("ff-history");
+    const f = load("ff-favs");
+    const b = load("ff-blacklist");
+    // One-time hydration from localStorage after mount keeps SSR markup stable.
+    /* eslint-disable react-hooks/set-state-in-effect */
+    if (h) setHistory(h);
+    if (f) setFavorites(f);
+    if (b) setBlacklist(b);
+    /* eslint-enable react-hooks/set-state-in-effect */
     return () => {
       if (timer.current) clearTimeout(timer.current);
       if (geoTimer.current) clearTimeout(geoTimer.current);
@@ -151,6 +183,38 @@ export default function FoodFinder() {
     } catch {
       // ignore quota errors
     }
+  }
+
+  function saveFavs(next: Restaurant[]) {
+    setFavorites(next);
+    try {
+      localStorage.setItem("ff-favs", JSON.stringify(next));
+    } catch {
+      // ignore quota errors
+    }
+  }
+
+  function saveBlacklist(next: string[]) {
+    setBlacklist(next);
+    try {
+      localStorage.setItem("ff-blacklist", JSON.stringify(next));
+    } catch {
+      // ignore quota errors
+    }
+  }
+
+  const isFav = (r: Restaurant) => favorites.some((f) => f.name === r.name);
+  function toggleFav(r: Restaurant) {
+    saveFavs(
+      isFav(r)
+        ? favorites.filter((f) => f.name !== r.name)
+        : [r, ...favorites].slice(0, 50),
+    );
+  }
+  function neverAgain(name: string) {
+    if (!blacklist.includes(name))
+      saveBlacklist([name, ...blacklist].slice(0, 300));
+    setWinner(null);
   }
 
   function recordWin(r: Restaurant) {
@@ -288,7 +352,7 @@ export default function FoodFinder() {
 
   function startSwipe() {
     setWinner(null);
-    setSwipeCards(sampleN(pool, 24));
+    setSwipeCards(sampleN(freshPool(), 24));
     setSwipeRound((n) => n + 1);
   }
 
@@ -298,9 +362,7 @@ export default function FoodFinder() {
     setSpinning(true);
     setWinner(null);
 
-    const recent = history.slice(0, 3).map((h) => h.name);
-    const fresh = pool.filter((r) => !recent.includes(r.name));
-    const choices = fresh.length ? fresh : pool;
+    const choices = freshPool();
     const pick = choices[Math.floor(Math.random() * choices.length)];
 
     let elapsed = 0;
@@ -365,7 +427,8 @@ export default function FoodFinder() {
 
   // ---- versus (elimination bracket) ----
   function startVersus() {
-    const contestants = sampleN(pool, Math.min(VERSUS_SIZE, pool.length));
+    const fp = freshPool();
+    const contestants = sampleN(fp, Math.min(VERSUS_SIZE, fp.length));
     if (contestants.length < 2) return;
     setWinner(null);
     setVsTotal(contestants.length - 1);
@@ -399,6 +462,14 @@ export default function FoodFinder() {
   }
 
   // ---- view ----
+  const filtersActive =
+    kinds.length < KINDS.length ||
+    !!flavor ||
+    cuisineSel.length > 0 ||
+    priceTier !== null ||
+    dietSel.length > 0 ||
+    openOnly ||
+    radius !== 1500;
   const located = coords !== null;
   const busy = status === "locating" || status === "searching";
   const supportsMotion =
@@ -510,11 +581,32 @@ export default function FoodFinder() {
               </button>
             </div>
 
-            {/* Filters */}
-            <section className="rounded-3xl border-[3px] border-black bg-white p-4 shadow-[5px_5px_0_0_#000]">
-              <div className="mb-4">
-                <div className="mb-1.5 flex items-center justify-between text-sm font-black">
-                  <span>搜索范围</span>
+            {/* Filters — collapsed by default (decide-first) */}
+            <section className="rounded-3xl border-[3px] border-black bg-white p-3 shadow-[5px_5px_0_0_#000]">
+              <button
+                onClick={() => setShowFilters((v) => !v)}
+                className="flex w-full items-center justify-between px-1 py-1 text-left"
+              >
+                <span className="text-sm font-black">
+                  🔧 筛选{filtersActive ? " · 已调" : ""}
+                </span>
+                <span className="text-xs font-bold text-black/50">
+                  {status === "ready"
+                    ? restaurants.length === 0
+                      ? "附近没找到"
+                      : pool.length === 0
+                        ? "无结果"
+                        : `范围内 ${pool.length} 家`
+                    : ""}{" "}
+                  {showFilters ? "▲" : "▼"}
+                </span>
+              </button>
+
+              {showFilters && (
+                <div className="mt-3">
+                  <div className="mb-4">
+                    <div className="mb-1.5 flex items-center justify-between text-sm font-black">
+                      <span>搜索范围</span>
                   <span className="rounded-full border-2 border-black bg-[#ffc83d] px-2 py-0.5 text-xs">
                     {prettyDistance(radius)}
                   </span>
@@ -634,14 +726,16 @@ export default function FoodFinder() {
                 <span className="text-xs font-medium text-black/40">（参考）</span>
               </label>
 
-              {status === "ready" && (
-                <p className="mt-3 text-center text-xs font-bold text-black/50">
-                  {restaurants.length === 0
-                    ? "附近没找到，换个位置或稍后再试"
-                    : pool.length === 0
-                      ? "当前筛选下没有结果，放宽条件试试"
-                      : `范围内可选 ${pool.length} 家`}
-                </p>
+              <label className="mt-2 flex items-center gap-2 text-sm font-bold">
+                <input
+                  type="checkbox"
+                  checked={avoidRecent}
+                  onChange={(e) => setAvoidRecent(e.target.checked)}
+                  className="h-4 w-4 accent-[#ff5436]"
+                />
+                避免最近吃过的
+              </label>
+                </div>
               )}
               {error && (
                 <p className="mt-3 text-center text-xs font-bold text-[#ff5436]">
@@ -862,6 +956,22 @@ export default function FoodFinder() {
                     >
                       🔁 再来一次
                     </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => toggleFav(winner)}
+                        className={`flex-1 rounded-2xl border-[3px] border-black py-2 text-center text-sm font-black text-black shadow-[3px_3px_0_0_#000] transition active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${
+                          isFav(winner) ? "bg-[#ffc83d]" : "bg-white"
+                        }`}
+                      >
+                        {isFav(winner) ? "★ 已收藏" : "☆ 收藏"}
+                      </button>
+                      <button
+                        onClick={() => neverAgain(winner.name)}
+                        className="flex-1 rounded-2xl border-[3px] border-black bg-white py-2 text-center text-sm font-black text-black shadow-[3px_3px_0_0_#000] transition active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
+                      >
+                        🚫 别再推
+                      </button>
+                    </div>
                   </div>
                   {winner.website && (
                     <a
@@ -883,6 +993,56 @@ export default function FoodFinder() {
                   )}
                 </div>
               </section>
+            )}
+
+            {/* Favorites */}
+            {favorites.length > 0 && (
+              <section>
+                <h3 className="mb-2 text-sm font-black">⭐ 我的收藏</h3>
+                <ul className="flex flex-col gap-2">
+                  {favorites.map((f) => (
+                    <li
+                      key={f.name}
+                      className="flex items-center gap-2 rounded-2xl border-2 border-black bg-white px-3 py-1.5 shadow-[2px_2px_0_0_#000]"
+                    >
+                      <a
+                        href={mapsDirUrl(f)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 truncate text-sm font-bold"
+                      >
+                        {f.name}
+                      </a>
+                      <a
+                        href={mapsPlaceUrl(f)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-bold text-black/40 underline"
+                      >
+                        详情
+                      </a>
+                      <button
+                        onClick={() =>
+                          saveFavs(favorites.filter((x) => x.name !== f.name))
+                        }
+                        className="px-1 text-base font-black text-black/40"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {/* Blacklist restore */}
+            {blacklist.length > 0 && (
+              <button
+                onClick={() => saveBlacklist([])}
+                className="text-center text-xs font-bold text-black/40 underline"
+              >
+                🚫 已排除 {blacklist.length} 家 · 点此恢复
+              </button>
             )}
 
             {/* History */}
