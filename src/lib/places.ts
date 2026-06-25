@@ -122,7 +122,30 @@ function bucketOf(types: string[] = [], primaryType = ""): string {
   return "restaurant";
 }
 
-// Google encodes cuisine in the type, e.g. "chinese_restaurant" → "chinese".
+// Non-"*_restaurant" Google place types → a cuisine keyword our filters match.
+const GTYPE_CUISINE: Record<string, string> = {
+  coffee_shop: "coffee",
+  cafe: "coffee",
+  tea_house: "tea",
+  juice_shop: "juice",
+  bakery: "bakery",
+  bagel_shop: "bakery",
+  donut_shop: "bakery",
+  confectionery: "dessert",
+  chocolate_shop: "dessert",
+  dessert_shop: "dessert",
+  ice_cream_shop: "ice_cream",
+  steak_house: "steak",
+  sandwich_shop: "sandwich",
+  deli: "sandwich",
+  bar_and_grill: "barbecue",
+  meal_takeaway: "fast_food",
+  food_court: "food_court",
+  diner: "american",
+};
+
+// Google encodes cuisine in the type: "chinese_restaurant" → "chinese", plus the
+// non-"*_restaurant" food types mapped above (bakery, cafe, steak_house, …).
 function cuisineFromType(
   primaryType = "",
   types: string[] = [],
@@ -130,6 +153,7 @@ function cuisineFromType(
   for (const t of [primaryType, ...types]) {
     const m = /^(.+)_restaurant$/.exec(t);
     if (m && m[1] !== "fast_food" && m[1] !== "meal") return m[1];
+    if (GTYPE_CUISINE[t]) return GTYPE_CUISINE[t];
   }
   return undefined;
 }

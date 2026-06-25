@@ -140,24 +140,32 @@ export function matchesFlavor(r: Restaurant, key: string): boolean {
 }
 
 // Cuisine multi-select (uses the cuisine data already in the API response).
+// Matched against cuisine tag AND the restaurant name (names almost always carry
+// the dish word in Asia → much better coverage than the sparse cuisine tag).
 export const CUISINES = [
-  { key: "chinese", label: "中餐", match: ["chinese", "cantonese", "sichuan", "dim_sum", "noodle", "hotpot"] },
-  { key: "malaysian", label: "马来/本地", match: ["malaysian", "mamak", "nasi", "local", "asian", "indonesian"] },
-  { key: "japanese", label: "日料", match: ["japanese", "sushi", "ramen"] },
-  { key: "korean", label: "韩餐", match: ["korean"] },
-  { key: "western", label: "西餐", match: ["western", "american", "italian", "pizza", "steak", "french", "burger"] },
-  { key: "indian", label: "印度", match: ["indian", "curry"] },
-  { key: "thai", label: "泰餐", match: ["thai"] },
-  { key: "drink", label: "咖啡/饮品", match: ["coffee", "cafe", "tea", "bubble_tea", "juice"] },
-  { key: "dessert", label: "甜品", match: ["dessert", "cake", "bakery", "ice_cream"] },
+  { key: "noodle", label: "🍜 面类", match: ["noodle", "mee", "ramen", "laksa", "pho", "udon", "pasta", "spaghetti", "kuey teow", "koay teow", "kway", "teow", "bihun", "wantan", "wonton", "米粉", "河粉", "面", "麵", "拉面", "板面"] },
+  { key: "rice", label: "🍚 饭类", match: ["rice", "nasi", "biryani", "claypot", "donburi", "丼", "饭", "飯", "鸡饭", "煲仔"] },
+  { key: "soup", label: "🍲 汤·火锅", match: ["soup", "hotpot", "hot_pot", "steamboat", "火锅", "汤", "湯", "bak kut teh", "肉骨茶", "粥", "congee", "porridge"] },
+  { key: "bbq", label: "🍢 烧烤", match: ["bbq", "barbecue", "grill", "satay", "沙爹", "烧烤", "烤", "yakitori"] },
+  { key: "fried", label: "🍗 炸物·快餐", match: ["fried", "fried_chicken", "burger", "炸", "fries", "kfc", "mcdonald", "nugget", "chicken"] },
+  { key: "dessert", label: "🍰 甜品", match: ["dessert", "cake", "bakery", "ice_cream", "蛋糕", "甜", "面包", "糕"] },
+  { key: "drink", label: "☕ 咖啡/饮品", match: ["coffee", "cafe", "tea", "bubble_tea", "juice", "咖啡", "茶", "kopitiam"] },
+  { key: "chinese", label: "中餐", match: ["chinese", "cantonese", "sichuan", "dim_sum", "中餐", "点心"] },
+  { key: "malaysian", label: "马来/本地", match: ["malaysian", "mamak", "local", "asian", "indonesian", "马来"] },
+  { key: "japanese", label: "日料", match: ["japanese", "sushi", "寿司", "日本", "日料"] },
+  { key: "korean", label: "韩餐", match: ["korean", "韩"] },
+  { key: "western", label: "西餐", match: ["western", "american", "italian", "pizza", "steak", "french", "西餐", "意大利"] },
+  { key: "indian", label: "印度", match: ["indian", "curry", "印度", "咖喱"] },
+  { key: "thai", label: "泰餐", match: ["thai", "泰"] },
 ] as const;
 
 export function matchesCuisine(r: Restaurant, keys: string[]): boolean {
   if (keys.length === 0) return true;
-  const c = (r.cuisine ?? "").toLowerCase();
+  // Search the cuisine tag AND the name (the dish word is usually in the name).
+  const hay = `${r.cuisine ?? ""} ${r.name}`.toLowerCase();
   return keys.some((key) => {
     const cu = CUISINES.find((x) => x.key === key);
-    return cu ? cu.match.some((m) => c.includes(m)) : false;
+    return cu ? cu.match.some((m) => hay.includes(m)) : false;
   });
 }
 

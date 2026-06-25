@@ -588,7 +588,7 @@ export default function FoodFinder() {
                 </div>
               </FilterGroup>
 
-              <FilterGroup label="菜系">
+              <FilterGroup label="想吃啥">
                 <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
                   {CUISINES.map((cu) => (
                     <button
