@@ -39,6 +39,7 @@ type Status = "idle" | "locating" | "searching" | "ready" | "error";
 const FETCH_RADIUS = 3000; // pull everything once, then filter by the slider client-side
 const ACCURATE_ENOUGH = 30; // meters — stop refining the GPS fix once this good
 const VERSUS_SIZE = 4;
+const BLACKLIST_MS = 3 * 24 * 60 * 60 * 1000; // 「别再推」3 天后自动恢复
 
 // Dev-only location presets for testing without being there. The whole panel is
 // guarded by IS_DEV, so it (and these) are stripped from production builds.
@@ -90,7 +91,9 @@ export default function FoodFinder() {
   const [winner, setWinner] = useState<Restaurant | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [favorites, setFavorites] = useState<Restaurant[]>([]);
-  const [blacklist, setBlacklist] = useState<string[]>([]);
+  const [blacklist, setBlacklist] = useState<
+    { name: string; until: number }[]
+  >([]);
 
   // spin mode
   const [spinning, setSpinning] = useState(false);
@@ -127,8 +130,10 @@ export default function FoodFinder() {
       list = list.filter((r) => matchesCuisine(r, cuisineSel));
     if (priceTier) list = list.filter((r) => estPriceTier(r) === priceTier);
     if (dietSel.length) list = list.filter((r) => matchesDiet(r, dietSel));
-    if (blacklist.length)
-      list = list.filter((r) => !blacklist.includes(r.name));
+    if (blacklist.length) {
+      const blocked = new Set(blacklist.map((b) => b.name));
+      list = list.filter((r) => !blocked.has(r.name));
+    }
     return list;
   }, [
     withinRange,
@@ -161,7 +166,16 @@ export default function FoodFinder() {
     };
     const h = load("ff-history");
     const f = load("ff-favs");
-    const b = load("ff-blacklist");
+    const rawB = load("ff-blacklist");
+    const now = Date.now();
+    // Migrate old string[] format, then drop entries past their 3-day expiry.
+    const b = Array.isArray(rawB)
+      ? rawB
+          .map((x) =>
+            typeof x === "string" ? { name: x, until: now + BLACKLIST_MS } : x,
+          )
+          .filter((x) => x && x.name && x.until > now)
+      : null;
     // One-time hydration from localStorage after mount keeps SSR markup stable.
     /* eslint-disable react-hooks/set-state-in-effect */
     if (h) setHistory(h);
@@ -194,7 +208,7 @@ export default function FoodFinder() {
     }
   }
 
-  function saveBlacklist(next: string[]) {
+  function saveBlacklist(next: { name: string; until: number }[]) {
     setBlacklist(next);
     try {
       localStorage.setItem("ff-blacklist", JSON.stringify(next));
@@ -212,8 +226,12 @@ export default function FoodFinder() {
     );
   }
   function neverAgain(name: string) {
-    if (!blacklist.includes(name))
-      saveBlacklist([name, ...blacklist].slice(0, 300));
+    saveBlacklist(
+      [
+        { name, until: Date.now() + BLACKLIST_MS },
+        ...blacklist.filter((b) => b.name !== name),
+      ].slice(0, 300),
+    );
     setWinner(null);
   }
 
@@ -1041,7 +1059,7 @@ export default function FoodFinder() {
                 onClick={() => saveBlacklist([])}
                 className="text-center text-xs font-bold text-black/40 underline"
               >
-                🚫 已排除 {blacklist.length} 家 · 点此恢复
+                🚫 已排除 {blacklist.length} 家（3 天后自动恢复）· 点此立即恢复
               </button>
             )}
 
